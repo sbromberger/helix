@@ -1147,7 +1147,7 @@ fn tutor(
         return Ok(());
     }
 
-    let path = helix_loader::runtime_dir().join("tutor.txt");
+    let path = helix_loader::runtime_dir().join("tutor");
     cx.editor.open(&path, Action::Replace)?;
     // Unset path to prevent accidentally saving to the original tutor file.
     doc_mut!(cx.editor).set_path(None)?;
@@ -1253,7 +1253,12 @@ fn language(
     }
 
     let doc = doc_mut!(cx.editor);
-    doc.set_language_by_language_id(&args[0], cx.editor.syn_loader.clone());
+
+    if args[0] == "text" {
+        doc.set_language(None, None)
+    } else {
+        doc.set_language_by_language_id(&args[0], cx.editor.syn_loader.clone())?;
+    }
     doc.detect_indent_and_line_ending();
 
     let id = doc.id();
