@@ -28,6 +28,10 @@ hidden = false
 You may also specify a file to use for configuration with the `-c` or
 `--config` CLI argument: `hx -c path/to/custom-config.toml`.
 
+It is also possible to trigger configuration file reloading by sending the `USR1`
+signal to the helix process, e.g. via `pkill -USR1 hx`. This is only supported 
+on unix operating systems.
+
 ## Editor
 
 ### `[editor]` Section
@@ -72,19 +76,35 @@ left = ["mode", "spinner", "file-name", "read-only-indicator"]
 center = []
 right = ["diagnostics", "selections", "position", "file-encoding", "file-line-ending", "file-type"]
 separator = "│"
+mode.normal = "NORMAL"
+mode.insert = "INSERT"
+mode.select = "SELECT"
 ```
+The `[editor.statusline]` key takes the following sub-keys:
 
-The following elements can be configured:
+| Key           | Description | Default |
+| ---           | ---         | ---     |
+| `left`        | A list of elements aligned to the left of the statusline | `["mode", "spinner", "file-name"]` |
+| `center`      | A list of elements aligned to the middle of the statusline | `[]` |
+| `right`       | A list of elements aligned to the right of the statusline | `["diagnostics", "selections", "position", "file-encoding"]` |
+| `separator`   | The character used to separate elements in the statusline | `"│"` |
+| `mode.normal` | The text shown in the `mode` element for normal mode | `"NOR"` |
+| `mode.insert` | The text shown in the `mode` element for insert mode | `"INS"` |
+| `mode.select` | The text shown in the `mode` element for select mode | `"SEL"` |
+
+The following statusline elements can be configured:
 
 | Key    | Description |
 | ------ | ----------- |
-| `mode` | The current editor mode (`NOR`/`INS`/`SEL`) |
+| `mode` | The current editor mode (`mode.normal`/`mode.insert`/`mode.select`) |
 | `spinner` | A progress spinner indicating LSP activity |
 | `file-name` | The path/name of the opened file |
 | `read-only-indicator` | When configured, indicates whether the file is read-only. |
 | `file-encoding` | The encoding of the opened file if it differs from UTF-8 |
 | `file-line-ending` | The file line endings (CRLF or LF) |
 | `file-type` | The type of the opened file (see `editor.file-type-indicators` below) |
+| `total-line-numbers` | The total line numbers of the opened file |
+| `file-type` | The type of the opened file |
 | `diagnostics` | The number of warnings and/or errors |
 | `selections` | The number of active selections |
 | `position` | The cursor position |
@@ -223,10 +243,11 @@ tabpad = "·" # Tabs will look like "→···" (depending on tab width)
 
 Options for rendering vertical indent guides.
 
-| Key         | Description                                             | Default |
-| ---         | ---                                                     | ---     |
-| `render`    | Whether to render indent guides.                        | `false` |
-| `character` | Literal character to use for rendering the indent guide | `│`     |
+| Key           | Description                                             | Default |
+| ---           | ---                                                     | ---     |
+| `render`      | Whether to render indent guides.                        | `false` |
+| `character`   | Literal character to use for rendering the indent guide | `│`     |
+| `skip-levels` | Number of indent levels to skip                         | `0`     |
 
 Example:
 
@@ -234,6 +255,7 @@ Example:
 [editor.indent-guides]
 render = true
 character = "╎"
+skip-levels = 1
 ```
 
 ### `[editor.file-type-indicators]` Section

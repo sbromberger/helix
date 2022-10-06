@@ -1,6 +1,6 @@
 use crate::{
     clipboard::{get_clipboard_provider, ClipboardProvider},
-    document::{Mode, SCRATCH_BUFFER_NAME},
+    document::Mode,
     graphics::{CursorKind, Rect},
     info::Info,
     input::KeyEvent,
@@ -30,7 +30,7 @@ use tokio::{
     time::{sleep, Duration, Instant, Sleep},
 };
 
-use anyhow::{bail, Error};
+use anyhow::Error;
 
 pub use helix_core::diagnostic::Severity;
 pub use helix_core::register::Registers;
@@ -275,6 +275,7 @@ pub struct StatusLineConfig {
     pub center: Vec<StatusLineElement>,
     pub right: Vec<StatusLineElement>,
     pub separator: String,
+    pub mode: ModeConfig,
 }
 
 impl Default for StatusLineConfig {
@@ -286,6 +287,25 @@ impl Default for StatusLineConfig {
             center: vec![],
             right: vec![E::Diagnostics, E::Selections, E::Position, E::FileEncoding],
             separator: String::from("│"),
+            mode: ModeConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", default, deny_unknown_fields)]
+pub struct ModeConfig {
+    pub normal: String,
+    pub insert: String,
+    pub select: String,
+}
+
+impl Default for ModeConfig {
+    fn default() -> Self {
+        Self {
+            normal: String::from("NOR"),
+            insert: String::from("INS"),
+            select: String::from("SEL"),
         }
     }
 }
@@ -328,6 +348,9 @@ pub enum StatusLineElement {
 
     /// The cursor position as a percent of the total file
     PositionPercentage,
+
+    /// The total line numbers of the current file
+    TotalLineNumbers,
 
     /// A single space
     Spacer,
@@ -547,15 +570,17 @@ impl Default for WhitespaceCharacters {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct IndentGuidesConfig {
     pub render: bool,
     pub character: char,
+    pub skip_levels: u16,
 }
 
 impl Default for IndentGuidesConfig {
     fn default() -> Self {
         Self {
+            skip_levels: 0,
             render: false,
             character: '│',
         }
@@ -669,7 +694,7 @@ pub struct Editor {
     /// The currently applied editor theme. While previewing a theme, the previewed theme
     /// is set here.
     pub theme: Theme,
-
+    pub last_line_number: Option<usize>,
     pub status_msg: Option<(Cow<'static, str>, Severity)>,
     pub autoinfo: Option<Info>,
 
@@ -678,7 +703,6 @@ pub struct Editor {
 
     pub idle_timer: Pin<Box<Sleep>>,
     pub last_motion: Option<Motion>,
-    pub pseudo_pending: Option<String>,
 
     pub last_completion: Option<CompleteAction>,
 
@@ -712,6 +736,14 @@ pub enum Action {
     VerticalSplit,
 }
 
+/// Error thrown on failed document closed
+pub enum CloseError {
+    /// Document doesn't exist
+    DoesNotExist,
+    /// Buffer is modified
+    BufferModified(String),
+}
+
 impl Editor {
     pub fn new(
         mut area: Rect,
@@ -743,6 +775,7 @@ impl Editor {
             syn_loader,
             theme_loader,
             last_theme: None,
+            last_line_number: None,
             registers: Registers::default(),
             clipboard_provider: get_clipboard_provider(),
             status_msg: None,
@@ -750,7 +783,6 @@ impl Editor {
             idle_timer: Box::pin(sleep(conf.idle_timeout)),
             last_motion: None,
             last_completion: None,
-            pseudo_pending: None,
             config,
             auto_pairs,
             exit_code: 0,
@@ -870,7 +902,7 @@ impl Editor {
 
         // try to find a language server based on the language name
         let language_server = doc.language.as_ref().and_then(|language| {
-            ls.get(language)
+            ls.get(language, doc.path())
                 .map_err(|e| {
                     log::error!(
                         "Failed to initialize the LSP for `{}` {{ {} }}",
@@ -1070,19 +1102,14 @@ impl Editor {
         self._refresh();
     }
 
-    pub fn close_document(&mut self, doc_id: DocumentId, force: bool) -> anyhow::Result<()> {
+    pub fn close_document(&mut self, doc_id: DocumentId, force: bool) -> Result<(), CloseError> {
         let doc = match self.documents.get(&doc_id) {
             Some(doc) => doc,
-            None => bail!("document does not exist"),
+            None => return Err(CloseError::DoesNotExist),
         };
 
         if !force && doc.is_modified() {
-            bail!(
-                "buffer {:?} is modified",
-                doc.relative_path()
-                    .map(|path| path.to_string_lossy().to_string())
-                    .unwrap_or_else(|| SCRATCH_BUFFER_NAME.into())
-            );
+            return Err(CloseError::BufferModified(doc.display_name().into_owned()));
         }
 
         if let Some(language_server) = doc.language_server() {
