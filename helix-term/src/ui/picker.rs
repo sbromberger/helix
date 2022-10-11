@@ -1,7 +1,7 @@
 use crate::{
     compositor::{Component, Compositor, Context, Event, EventResult},
     ctrl, key, shift,
-    ui::{self, EditorView},
+    ui::{self, fuzzy_match::FuzzyQuery, EditorView},
 };
 use tui::{
     buffer::Buffer as Surface,
@@ -9,7 +9,6 @@ use tui::{
 };
 
 use fuzzy_matcher::skim::SkimMatcherV2 as Matcher;
-use fuzzy_matcher::FuzzyMatcher;
 use tui::widgets::Widget;
 
 use std::time::Instant;
@@ -311,8 +310,6 @@ pub struct Picker<T: Item> {
     matcher: Box<Matcher>,
     /// (index, score)
     matches: Vec<(usize, i64)>,
-    /// Filter over original options.
-    filters: Vec<usize>, // could be optimized into bit but not worth it now
 
     /// Current height of the completions box
     completion_height: u16,
@@ -347,7 +344,6 @@ impl<T: Item> Picker<T> {
             editor_data,
             matcher: Box::new(Matcher::default()),
             matches: Vec::new(),
-            filters: Vec::new(),
             cursor: 0,
             prompt,
             previous_pattern: String::new(),
@@ -389,13 +385,14 @@ impl<T: Item> Picker<T> {
                     .map(|(index, _option)| (index, 0)),
             );
         } else if pattern.starts_with(&self.previous_pattern) {
+            let query = FuzzyQuery::new(pattern);
             // optimization: if the pattern is a more specific version of the previous one
             // then we can score the filtered set.
             self.matches.retain_mut(|(index, score)| {
                 let option = &self.options[*index];
                 let text = option.sort_text(&self.editor_data);
 
-                match self.matcher.fuzzy_match(&text, pattern) {
+                match query.fuzzy_match(&text, &self.matcher) {
                     Some(s) => {
                         // Update the score
                         *score = s;
@@ -408,23 +405,17 @@ impl<T: Item> Picker<T> {
             self.matches
                 .sort_unstable_by_key(|(_, score)| Reverse(*score));
         } else {
+            let query = FuzzyQuery::new(pattern);
             self.matches.clear();
             self.matches.extend(
                 self.options
                     .iter()
                     .enumerate()
                     .filter_map(|(index, option)| {
-                        // filter options first before matching
-                        if !self.filters.is_empty() {
-                            // TODO: this filters functionality seems inefficient,
-                            // instead store and operate on filters if any
-                            self.filters.binary_search(&index).ok()?;
-                        }
-
                         let text = option.filter_text(&self.editor_data);
 
-                        self.matcher
-                            .fuzzy_match(&text, pattern)
+                        query
+                            .fuzzy_match(&text, &self.matcher)
                             .map(|score| (index, score))
                     }),
             );
@@ -482,14 +473,6 @@ impl<T: Item> Picker<T> {
         self.matches
             .get(self.cursor)
             .map(|(index, _score)| &self.options[*index])
-    }
-
-    pub fn save_filter(&mut self, cx: &Context) {
-        self.filters.clear();
-        self.filters
-            .extend(self.matches.iter().map(|(index, _)| *index));
-        self.filters.sort_unstable(); // used for binary search later
-        self.prompt.clear(cx.editor);
     }
 
     pub fn toggle_preview(&mut self) {
@@ -571,9 +554,6 @@ impl<T: Item + 'static> Component for Picker<T> {
                     (self.callback_fn)(cx, option, Action::VerticalSplit);
                 }
                 return close_fn;
-            }
-            ctrl!(' ') => {
-                self.save_filter(cx);
             }
             ctrl!('t') => {
                 self.toggle_preview();
@@ -657,9 +637,8 @@ impl<T: Item + 'static> Component for Picker<T> {
             }
 
             let spans = option.label(&self.editor_data);
-            let (_score, highlights) = self
-                .matcher
-                .fuzzy_indices(&String::from(&spans), self.prompt.line())
+            let (_score, highlights) = FuzzyQuery::new(self.prompt.line())
+                .fuzzy_indicies(&String::from(&spans), &self.matcher)
                 .unwrap_or_default();
 
             spans.0.into_iter().fold(inner, |pos, span| {
