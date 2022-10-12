@@ -2224,7 +2224,7 @@ fn append_mode(cx: &mut Context) {
         .iter()
         .last()
         .expect("selection should always have at least one range");
-    if !last_range.is_empty() && last_range.head == end {
+    if !last_range.is_empty() && last_range.to() == end {
         let transaction = Transaction::change(
             doc.text(),
             [(end, end, Some(doc.line_ending.as_str().into()))].into_iter(),
@@ -2432,11 +2432,11 @@ impl ui::menu::Item for MappableCommand {
         match self {
             MappableCommand::Typable { doc, name, .. } => match keymap.get(name as &String) {
                 Some(bindings) => format!("{} ({}) [{}]", doc, fmt_binding(bindings), name).into(),
-                None => doc.as_str().into(),
+                None => format!("{} [{}]", doc, name).into(),
             },
             MappableCommand::Static { doc, name, .. } => match keymap.get(*name) {
                 Some(bindings) => format!("{} ({}) [{}]", doc, fmt_binding(bindings), name).into(),
-                None => (*doc).into(),
+                None => format!("{} [{}]", doc, name).into(),
             },
         }
     }
