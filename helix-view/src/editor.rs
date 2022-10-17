@@ -576,7 +576,7 @@ impl Default for WhitespaceCharacters {
 pub struct IndentGuidesConfig {
     pub render: bool,
     pub character: char,
-    pub skip_levels: u16,
+    pub skip_levels: u8,
 }
 
 impl Default for IndentGuidesConfig {
