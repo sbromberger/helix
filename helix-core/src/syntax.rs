@@ -61,6 +61,12 @@ pub struct Configuration {
     pub language: Vec<LanguageConfiguration>,
 }
 
+impl Default for Configuration {
+    fn default() -> Self {
+        crate::config::default_syntax_loader()
+    }
+}
+
 // largely based on tree-sitter/cli/src/loader.rs
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -355,14 +361,12 @@ pub fn read_query(language: &str, filename: &str) -> String {
 
 impl LanguageConfiguration {
     fn initialize_highlight(&self, scopes: &[String]) -> Option<Arc<HighlightConfiguration>> {
-        let language = self.language_id.to_ascii_lowercase();
-
-        let highlights_query = read_query(&language, "highlights.scm");
+        let highlights_query = read_query(&self.language_id, "highlights.scm");
         // always highlight syntax errors
         // highlights_query += "\n(ERROR) @error";
 
-        let injections_query = read_query(&language, "injections.scm");
-        let locals_query = read_query(&language, "locals.scm");
+        let injections_query = read_query(&self.language_id, "injections.scm");
+        let locals_query = read_query(&self.language_id, "locals.scm");
 
         if highlights_query.is_empty() {
             None
@@ -426,14 +430,20 @@ impl LanguageConfiguration {
     }
 
     fn load_query(&self, kind: &str) -> Option<Query> {
-        let lang_name = self.language_id.to_ascii_lowercase();
-        let query_text = read_query(&lang_name, kind);
+        let query_text = read_query(&self.language_id, kind);
         if query_text.is_empty() {
             return None;
         }
         let lang = self.highlight_config.get()?.as_ref()?.language;
         Query::new(lang, &query_text)
-            .map_err(|e| log::error!("Failed to parse {} queries for {}: {}", kind, lang_name, e))
+            .map_err(|e| {
+                log::error!(
+                    "Failed to parse {} queries for {}: {}",
+                    kind,
+                    self.language_id,
+                    e
+                )
+            })
             .ok()
     }
 }
@@ -465,9 +475,10 @@ impl Loader {
 
             for file_type in &config.file_types {
                 // entry().or_insert(Vec::new).push(language_id);
+                let file_type = file_type.replace('/', &std::path::MAIN_SEPARATOR.to_string());
                 loader
                     .language_config_ids_by_file_type
-                    .insert(file_type.clone(), language_id);
+                    .insert(file_type, language_id);
             }
             for shebang in &config.shebangs {
                 loader
@@ -492,6 +503,17 @@ impl Loader {
                 path.extension()
                     .and_then(|extension| extension.to_str())
                     .and_then(|extension| self.language_config_ids_by_file_type.get(extension))
+            })
+            .or_else(|| {
+                self.language_config_ids_by_file_type
+                    .iter()
+                    .find_map(|(file_type, id)| {
+                        if path.to_str()?.ends_with(file_type) {
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    })
             });
 
         configuration_id.and_then(|&id| self.language_configs.get(id).cloned())
@@ -2030,6 +2052,57 @@ impl<I: Iterator<Item = HighlightEvent>> Iterator for Merge<I> {
     }
 }
 
+pub fn pretty_print_tree<W: fmt::Write>(fmt: &mut W, node: Node) -> fmt::Result {
+    pretty_print_tree_impl(fmt, node, true, None, 0)
+}
+
+fn pretty_print_tree_impl<W: fmt::Write>(
+    fmt: &mut W,
+    node: Node,
+    is_root: bool,
+    field_name: Option<&str>,
+    depth: usize,
+) -> fmt::Result {
+    fn is_visible(node: Node) -> bool {
+        node.is_missing()
+            || (node.is_named() && node.language().node_kind_is_visible(node.kind_id()))
+    }
+
+    if is_visible(node) {
+        let indentation_columns = depth * 2;
+        write!(fmt, "{:indentation_columns$}", "")?;
+
+        if let Some(field_name) = field_name {
+            write!(fmt, "{}: ", field_name)?;
+        }
+
+        write!(fmt, "({}", node.kind())?;
+    } else if is_root {
+        write!(fmt, "(\"{}\")", node.kind())?;
+    }
+
+    for child_idx in 0..node.child_count() {
+        if let Some(child) = node.child(child_idx) {
+            if is_visible(child) {
+                fmt.write_char('\n')?;
+            }
+
+            pretty_print_tree_impl(
+                fmt,
+                child,
+                false,
+                node.field_name_for_child(child_idx as u32),
+                depth + 1,
+            )?;
+        }
+    }
+
+    if is_visible(node) {
+        write!(fmt, ")")?;
+    }
+
+    Ok(())
+}
 #[cfg(test)]
 mod test {
     use super::*;
@@ -2050,7 +2123,7 @@ mod test {
         );
 
         let loader = Loader::new(Configuration { language: vec![] });
-        let language = get_language("Rust").unwrap();
+        let language = get_language("rust").unwrap();
 
         let query = Query::new(language, query_str).unwrap();
         let textobject = TextObjectQuery { query };
@@ -2110,7 +2183,7 @@ mod test {
 
         let loader = Loader::new(Configuration { language: vec![] });
 
-        let language = get_language("Rust").unwrap();
+        let language = get_language("rust").unwrap();
         let config = HighlightConfiguration::new(
             language,
             &std::fs::read_to_string("../runtime/grammars/sources/rust/queries/highlights.scm")
@@ -2199,6 +2272,63 @@ mod test {
                 new_end_position: Point { row: 0, column: 14 }
             }]
         );
+    }
+
+    #[track_caller]
+    fn assert_pretty_print(source: &str, expected: &str, start: usize, end: usize) {
+        let source = Rope::from_str(source);
+
+        let loader = Loader::new(Configuration { language: vec![] });
+        let language = get_language("rust").unwrap();
+
+        let config = HighlightConfiguration::new(language, "", "", "").unwrap();
+        let syntax = Syntax::new(&source, Arc::new(config), Arc::new(loader));
+
+        let root = syntax
+            .tree()
+            .root_node()
+            .descendant_for_byte_range(start, end)
+            .unwrap();
+
+        let mut output = String::new();
+        pretty_print_tree(&mut output, root).unwrap();
+
+        assert_eq!(expected, output);
+    }
+
+    #[test]
+    fn test_pretty_print() {
+        let source = r#"/// Hello"#;
+        assert_pretty_print(source, "(line_comment)", 0, source.len());
+
+        // A large tree should be indented with fields:
+        let source = r#"fn main() {
+            println!("Hello, World!");
+        }"#;
+        assert_pretty_print(
+            source,
+            concat!(
+                "(function_item\n",
+                "  name: (identifier)\n",
+                "  parameters: (parameters)\n",
+                "  body: (block\n",
+                "    (expression_statement\n",
+                "      (macro_invocation\n",
+                "        macro: (identifier)\n",
+                "        (token_tree\n",
+                "          (string_literal))))))",
+            ),
+            0,
+            source.len(),
+        );
+
+        // Selecting a token should print just that token:
+        let source = r#"fn main() {}"#;
+        assert_pretty_print(source, r#"("fn")"#, 0, 1);
+
+        // Error nodes are printed as errors:
+        let source = r#"}{"#;
+        assert_pretty_print(source, "(ERROR)", 0, source.len());
     }
 
     #[test]
