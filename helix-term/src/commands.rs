@@ -3453,7 +3453,12 @@ enum Paste {
 }
 
 fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Paste, count: usize) {
+    if values.is_empty() {
+        return;
+    }
+
     let repeat = std::iter::repeat(
+        // `values` is asserted to have at least one entry above.
         values
             .last()
             .map(|value| Tendril::from(value.repeat(count)))
@@ -3477,6 +3482,8 @@ fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Pa
     let text = doc.text();
     let selection = doc.selection(view.id);
 
+    let mut ranges = SmallVec::with_capacity(selection.len());
+
     let transaction = Transaction::change_by_selection(text, selection, |range| {
         let pos = match (action, linewise) {
             // paste linewise before
@@ -3493,8 +3500,21 @@ fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Pa
             // paste at cursor
             (Paste::Cursor, _) => range.cursor(text.slice(..)),
         };
-        (pos, pos, values.next())
+
+        let value = values.next();
+
+        let value_len = value
+            .as_ref()
+            .map(|content| content.chars().count())
+            .unwrap_or_default();
+
+        ranges.push(Range::new(pos, pos + value_len));
+
+        (pos, pos, value)
     });
+
+    let transaction = transaction.with_selection(Selection::new(ranges, selection.primary_index()));
+
     apply_transaction(&transaction, doc, view);
 }
 
@@ -3939,15 +3959,12 @@ pub fn completion(cx: &mut Context) {
             };
 
             if !prefix.is_empty() {
-                items = items
-                    .into_iter()
-                    .filter(|item| {
-                        item.filter_text
-                            .as_ref()
-                            .unwrap_or(&item.label)
-                            .starts_with(&prefix)
-                    })
-                    .collect();
+                items.retain(|item| {
+                    item.filter_text
+                        .as_ref()
+                        .unwrap_or(&item.label)
+                        .starts_with(&prefix)
+                });
             }
 
             if items.is_empty() {
@@ -4751,6 +4768,7 @@ fn shell(cx: &mut compositor::Context, cmd: &str, behavior: &ShellBehavior) {
     let selection = doc.selection(view.id);
 
     let mut changes = Vec::with_capacity(selection.len());
+    let mut ranges = SmallVec::with_capacity(selection.len());
     let text = doc.text().slice(..);
 
     for range in selection.ranges() {
@@ -4774,11 +4792,13 @@ fn shell(cx: &mut compositor::Context, cmd: &str, behavior: &ShellBehavior) {
             ShellBehavior::Append => (range.to(), range.to()),
             _ => (range.from(), range.from()),
         };
+        ranges.push(Range::new(to, to + output.chars().count()));
         changes.push((from, to, Some(output)));
     }
 
     if behavior != &ShellBehavior::Ignore {
-        let transaction = Transaction::change(doc.text(), changes.into_iter());
+        let transaction = Transaction::change(doc.text(), changes.into_iter())
+            .with_selection(Selection::new(ranges, selection.primary_index()));
         apply_transaction(&transaction, doc, view);
         doc.append_changes_to_history(view.id);
     }
