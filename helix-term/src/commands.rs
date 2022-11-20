@@ -1134,6 +1134,10 @@ where
             }
 
             KeyEvent {
+                code: KeyCode::Tab, ..
+            } => '\t',
+
+            KeyEvent {
                 code: KeyCode::Char(ch),
                 ..
             } => ch,
@@ -1279,6 +1283,9 @@ fn replace(cx: &mut Context) {
                 code: KeyCode::Enter,
                 ..
             } => Some(doc.line_ending.as_str()),
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => Some("\t"),
             _ => None,
         };
 
