@@ -2007,7 +2007,7 @@ fn global_search(cx: &mut Context) {
                         align_view(doc, view, Align::Center);
                     },
                     |_editor, FileResult { path, line_num }| {
-                        Some((path.clone(), Some((*line_num, *line_num))))
+                        Some((path.clone().into(), Some((*line_num, *line_num))))
                     },
                 );
                 compositor.push(Box::new(overlayed(picker)));
@@ -2366,7 +2366,7 @@ fn buffer_picker(cx: &mut Context) {
                 .selection(view_id)
                 .primary()
                 .cursor_line(doc.text().slice(..));
-            Some((meta.path.clone()?, Some((line, line))))
+            Some((meta.id.into(), Some((line, line))))
         },
     );
     cx.push_layer(Box::new(overlayed(picker)));
@@ -2433,7 +2433,6 @@ fn jumplist_picker(cx: &mut Context) {
             .views()
             .flat_map(|(view, _)| {
                 view.jumps
-                    .get()
                     .iter()
                     .map(|(doc_id, selection)| new_meta(view, *doc_id, selection.clone()))
             })
@@ -2447,7 +2446,7 @@ fn jumplist_picker(cx: &mut Context) {
         |editor, meta| {
             let doc = &editor.documents.get(&meta.id)?;
             let line = meta.selection.primary().cursor_line(doc.text().slice(..));
-            Some((meta.path.clone()?, Some((line, line))))
+            Some((meta.path.clone()?.into(), Some((line, line))))
         },
     );
     cx.push_layer(Box::new(overlayed(picker)));
@@ -3473,7 +3472,14 @@ enum Paste {
     Cursor,
 }
 
-fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Paste, count: usize) {
+fn paste_impl(
+    values: &[String],
+    doc: &mut Document,
+    view: &mut View,
+    action: Paste,
+    count: usize,
+    mode: Mode,
+) {
     if values.is_empty() {
         return;
     }
@@ -3505,7 +3511,7 @@ fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Pa
     let mut offset = 0;
     let mut ranges = SmallVec::with_capacity(selection.len());
 
-    let transaction = Transaction::change_by_selection(text, selection, |range| {
+    let mut transaction = Transaction::change_by_selection(text, selection, |range| {
         let pos = match (action, linewise) {
             // paste linewise before
             (Paste::Before, true) => text.line_to_char(text.char_to_line(range.from())),
@@ -3537,7 +3543,9 @@ fn paste_impl(values: &[String], doc: &mut Document, view: &mut View, action: Pa
         (pos, pos, value)
     });
 
-    let transaction = transaction.with_selection(Selection::new(ranges, selection.primary_index()));
+    if mode == Mode::Normal {
+        transaction = transaction.with_selection(Selection::new(ranges, selection.primary_index()));
+    }
 
     apply_transaction(&transaction, doc, view);
 }
@@ -3549,7 +3557,7 @@ pub(crate) fn paste_bracketed_value(cx: &mut Context, contents: String) {
         Mode::Normal => Paste::Before,
     };
     let (view, doc) = current!(cx.editor);
-    paste_impl(&[contents], doc, view, paste, count);
+    paste_impl(&[contents], doc, view, paste, count, cx.editor.mode);
 }
 
 fn paste_clipboard_impl(
@@ -3561,7 +3569,7 @@ fn paste_clipboard_impl(
     let (view, doc) = current!(editor);
     match editor.clipboard_provider.get_contents(clipboard_type) {
         Ok(contents) => {
-            paste_impl(&[contents], doc, view, action, count);
+            paste_impl(&[contents], doc, view, action, count, editor.mode);
             Ok(())
         }
         Err(e) => Err(e.context("Couldn't get system clipboard contents")),
@@ -3680,7 +3688,7 @@ fn paste(cx: &mut Context, pos: Paste) {
     let registers = &mut cx.editor.registers;
 
     if let Some(values) = registers.read(reg_name) {
-        paste_impl(values, doc, view, pos, count);
+        paste_impl(values, doc, view, pos, count, cx.editor.mode);
     }
 }
 
@@ -3799,15 +3807,21 @@ fn format_selections(cx: &mut Context) {
 
     let range = ranges[0];
 
-    let edits = tokio::task::block_in_place(|| {
-        helix_lsp::block_on(language_server.text_document_range_formatting(
-            doc.identifier(),
-            range,
-            lsp::FormattingOptions::default(),
-            None,
-        ))
-    })
-    .unwrap_or_default();
+    let request = match language_server.text_document_range_formatting(
+        doc.identifier(),
+        range,
+        lsp::FormattingOptions::default(),
+        None,
+    ) {
+        Some(future) => future,
+        None => {
+            cx.editor
+                .set_error("Language server does not support range formatting");
+            return;
+        }
+    };
+
+    let edits = tokio::task::block_in_place(|| helix_lsp::block_on(request)).unwrap_or_default();
 
     let transaction = helix_lsp::util::generate_transaction_from_edits(
         doc.text(),
@@ -3951,7 +3965,10 @@ pub fn completion(cx: &mut Context) {
 
     let pos = pos_to_lsp_pos(doc.text(), cursor, offset_encoding);
 
-    let future = language_server.completion(doc.identifier(), pos, None);
+    let future = match language_server.completion(doc.identifier(), pos, None) {
+        Some(future) => future,
+        None => return,
+    };
 
     let trigger_offset = cursor;
 
@@ -4801,15 +4818,24 @@ fn shell(cx: &mut compositor::Context, cmd: &str, behavior: &ShellBehavior) {
     let mut ranges = SmallVec::with_capacity(selection.len());
     let text = doc.text().slice(..);
 
+    let mut shell_output: Option<Tendril> = None;
     let mut offset = 0isize;
-
     for range in selection.ranges() {
-        let fragment = range.slice(text);
-        let (output, success) = match shell_impl(shell, cmd, pipe.then(|| fragment.into())) {
-            Ok(result) => result,
-            Err(err) => {
-                cx.editor.set_error(err.to_string());
-                return;
+        let (output, success) = if let Some(output) = shell_output.as_ref() {
+            (output.clone(), true)
+        } else {
+            let fragment = range.slice(text);
+            match shell_impl(shell, cmd, pipe.then(|| fragment.into())) {
+                Ok(result) => {
+                    if !pipe {
+                        shell_output = Some(result.0.clone());
+                    }
+                    result
+                }
+                Err(err) => {
+                    cx.editor.set_error(err.to_string());
+                    return;
+                }
             }
         };
 
