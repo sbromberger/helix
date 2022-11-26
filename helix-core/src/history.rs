@@ -122,17 +122,32 @@ impl History {
     /// Returns the changes since the given revision composed into a transaction.
     /// Returns None if there are no changes between the current and given revisions.
     pub fn changes_since(&self, revision: usize) -> Option<Transaction> {
-        if self.at_root() || self.current >= revision {
-            return None;
-        }
+        use std::cmp::Ordering::*;
 
-        // The bounds are checked in the if condition above:
-        // `revision` is known to be `< self.current`.
-        self.revisions[revision..self.current]
-            .iter()
-            .map(|revision| &revision.transaction)
-            .cloned()
-            .reduce(|acc, transaction| acc.compose(transaction))
+        match revision.cmp(&self.current) {
+            Equal => None,
+            Less => {
+                let mut child = self.revisions[revision].last_child?.get();
+                let mut transaction = self.revisions[child].transaction.clone();
+                while child != self.current {
+                    child = self.revisions[child].last_child?.get();
+                    transaction = transaction.compose(self.revisions[child].transaction.clone());
+                }
+                Some(transaction)
+            }
+            Greater => {
+                let mut inversion = self.revisions[revision].inversion.clone();
+                let mut parent = self.revisions[revision].parent;
+                while parent != self.current {
+                    parent = self.revisions[parent].parent;
+                    if parent == 0 {
+                        return None;
+                    }
+                    inversion = inversion.compose(self.revisions[parent].inversion.clone());
+                }
+                Some(inversion)
+            }
+        }
     }
 
     /// Undo the last edit.
