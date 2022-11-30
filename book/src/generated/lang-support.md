@@ -56,7 +56,7 @@
 | idris |  |  |  | `idris2-lsp` |
 | iex | ✓ |  |  |  |
 | ini | ✓ |  |  |  |
-| java | ✓ |  |  | `jdtls` |
+| java | ✓ | ✓ |  | `jdtls` |
 | javascript | ✓ | ✓ | ✓ | `typescript-language-server` |
 | jsdoc | ✓ |  |  |  |
 | json | ✓ |  | ✓ | `vscode-json-language-server` |
@@ -95,7 +95,7 @@
 | python | ✓ | ✓ | ✓ | `pylsp` |
 | qml | ✓ |  | ✓ | `qmlls` |
 | r | ✓ |  |  | `R` |
-| racket |  |  |  | `racket` |
+| racket | ✓ |  |  | `racket` |
 | regex | ✓ |  |  |  |
 | rescript | ✓ | ✓ |  | `rescript-language-server` |
 | rmarkdown | ✓ |  | ✓ | `R` |
