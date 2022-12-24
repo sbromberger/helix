@@ -1164,6 +1164,7 @@ impl EditorView {
                     }
 
                     editor.focus(view_id);
+                    editor.ensure_cursor_in_view(view_id);
 
                     return EventResult::Consumed(None);
                 }
@@ -1200,7 +1201,8 @@ impl EditorView {
                 let primary = selection.primary_mut();
                 *primary = primary.put_cursor(doc.text().slice(..), pos, true);
                 doc.set_selection(view.id, selection);
-
+                let view_id = view.id;
+                cxt.editor.ensure_cursor_in_view(view_id);
                 EventResult::Consumed(None)
             }
 
@@ -1222,6 +1224,7 @@ impl EditorView {
                 commands::scroll(cxt, offset, direction);
 
                 cxt.editor.tree.focus = current_view;
+                cxt.editor.ensure_cursor_in_view(current_view);
 
                 EventResult::Consumed(None)
             }
