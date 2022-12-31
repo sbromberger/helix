@@ -449,6 +449,7 @@ where
     };
 
     write(context, read_only_indicator, None);
+}
 
 fn render_file_base_name<F>(context: &mut RenderContext, write: F)
 where
