@@ -101,12 +101,12 @@ The following statusline elements can be configured:
 | `mode` | The current editor mode (`mode.normal`/`mode.insert`/`mode.select`) |
 | `spinner` | A progress spinner indicating LSP activity |
 | `file-name` | The path/name of the opened file |
-| `read-only-indicator` | When configured, indicates whether the file is read-only. |
+| `file-base-name` | The basename of the opened file |
 | `file-encoding` | The encoding of the opened file if it differs from UTF-8 |
 | `file-line-ending` | The file line endings (CRLF or LF) |
 | `file-type` | The type of the opened file (see `editor.file-type-indicators` below) |
+| `read-only-indicator` | When configured, indicates whether the file is read-only. |
 | `total-line-numbers` | The total line numbers of the opened file |
-| `file-type` | The type of the opened file |
 | `diagnostics` | The number of warnings and/or errors |
 | `workspace-diagnostics` | The number of warnings and/or errors on workspace |
 | `selections` | The number of active selections |
