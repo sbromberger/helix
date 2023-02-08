@@ -13,7 +13,7 @@ use tui::{
 use super::{align_view, push_jump, Align, Context, Editor, Open};
 
 use helix_core::{path, Selection};
-use helix_view::{apply_transaction, document::Mode, editor::Action, theme::Style};
+use helix_view::{document::Mode, editor::Action, theme::Style};
 
 use crate::{
     compositor::{self, Compositor},
@@ -800,7 +800,7 @@ pub fn apply_workspace_edit(
             offset_encoding,
         );
         let view = view_mut!(editor, view_id);
-        apply_transaction(&transaction, doc, view);
+        doc.apply(&transaction, view.id);
         doc.append_changes_to_history(view);
     };
 
@@ -912,6 +912,31 @@ fn to_locations(definitions: Option<lsp::GotoDefinitionResponse>) -> Vec<lsp::Lo
             .collect(),
         None => Vec::new(),
     }
+}
+
+pub fn goto_declaration(cx: &mut Context) {
+    let (view, doc) = current!(cx.editor);
+    let language_server = language_server!(cx.editor, doc);
+    let offset_encoding = language_server.offset_encoding();
+
+    let pos = doc.position(view.id, offset_encoding);
+
+    let future = match language_server.goto_declaration(doc.identifier(), pos, None) {
+        Some(future) => future,
+        None => {
+            cx.editor
+                .set_error("Language server does not support goto-declaration");
+            return;
+        }
+    };
+
+    cx.callback(
+        future,
+        move |editor, compositor, response: Option<lsp::GotoDefinitionResponse>| {
+            let items = to_locations(response);
+            goto_impl(editor, compositor, items, offset_encoding);
+        },
+    );
 }
 
 pub fn goto_definition(cx: &mut Context) {

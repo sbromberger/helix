@@ -176,7 +176,7 @@ impl Application {
             area,
             theme_loader.clone(),
             syn_loader.clone(),
-            Box::new(Map::new(Arc::clone(&config), |config: &Config| {
+            Arc::new(Map::new(Arc::clone(&config), |config: &Config| {
                 &config.editor
             })),
         );
@@ -282,10 +282,6 @@ impl Application {
         Ok(app)
     }
 
-    #[cfg(feature = "integration")]
-    async fn render(&mut self) {}
-
-    #[cfg(not(feature = "integration"))]
     async fn render(&mut self) {
         let mut cx = crate::compositor::Context {
             editor: &mut self.editor,
@@ -314,8 +310,10 @@ impl Application {
         let surface = self.terminal.current_buffer_mut();
 
         self.compositor.render(area, surface, &mut cx);
-
         let (pos, kind) = self.compositor.cursor(area, &self.editor);
+        // reset cursor cache
+        self.editor.cursor_cache.set(None);
+
         let pos = pos.map(|pos| (pos.col as u16, pos.row as u16));
         self.terminal.draw(pos, kind).unwrap();
     }
@@ -400,6 +398,13 @@ impl Application {
         // Update all the relevant members in the editor after updating
         // the configuration.
         self.editor.refresh_config();
+
+        // reset view position in case softwrap was enabled/disabled
+        let scrolloff = self.editor.config().scrolloff;
+        for (view, _) in self.editor.tree.views_mut() {
+            let doc = &self.editor.documents[&view.doc];
+            view.ensure_cursor_in_view(doc, scrolloff)
+        }
     }
 
     /// refresh language config after config change
