@@ -55,7 +55,7 @@ use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer}
 
 use arc_swap::access::{DynAccess, DynGuard};
 
-const DEFAULT_FILE_MODIFICATION_INDICATOR: &str = "[+]";
+const DEFAULT_FILE_MODIFICATION_INDICATOR: char = '+';
 const DEFAULT_READ_ONLY_INDICATOR: &str = "[RO]";
 
 fn deserialize_duration_millis<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -273,7 +273,7 @@ pub struct Config {
     #[serde(default)]
     pub whitespace: WhitespaceConfig,
     /// String for file modification indicator
-    pub file_modification_indicator: String,
+    pub file_modification_indicator: char,
     /// Vector of Strings of custom spinner frames, one per element
     pub spinner_frames: Vec<String>,
     /// Interval (in ms) for spinner frame change
@@ -778,7 +778,7 @@ impl Default for Config {
             terminal: get_terminal_provider(),
             rulers: Vec::new(),
             whitespace: WhitespaceConfig::default(),
-            file_modification_indicator: DEFAULT_FILE_MODIFICATION_INDICATOR.to_string(),
+            file_modification_indicator: DEFAULT_FILE_MODIFICATION_INDICATOR,
             spinner_frames: BRAILLE_SPINNER_STRINGS
                 .into_iter()
                 .map(String::from)

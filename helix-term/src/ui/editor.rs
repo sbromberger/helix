@@ -568,7 +568,7 @@ impl EditorView {
                 if doc.is_modified() {
                     file_modification_indicator
                 } else {
-                    ""
+                    &' '
                 }
             );
             let used_width = viewport.x.saturating_sub(x);

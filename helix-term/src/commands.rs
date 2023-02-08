@@ -73,7 +73,7 @@ use grep_searcher::{sinks, BinaryDetection, SearcherBuilder};
 use ignore::{DirEntry, WalkBuilder, WalkState};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-const DEFAULT_CURRENT_BUFFER_INDICATOR: &str = "*";
+const DEFAULT_CURRENT_BUFFER_INDICATOR: char = '*';
 
 pub struct Context<'a> {
     pub register: Option<char>,
@@ -2434,8 +2434,8 @@ fn buffer_picker(cx: &mut Context) {
         path: Option<PathBuf>,
         is_modified: bool,
         is_current: bool,
-        modified_indicator: String,
-        current_indicator: String,
+        modified_indicator: char,
+        current_indicator: char,
     }
 
     impl ui::menu::Item for BufferMeta {
@@ -2453,10 +2453,10 @@ fn buffer_picker(cx: &mut Context) {
 
             let mut flags = String::new();
             if self.is_modified {
-                flags.push(self.modified_indicator.as_str());
+                flags.push(self.modified_indicator);
             }
             if self.is_current {
-                flags.push(self.current_indicator.as_str());
+                flags.push(self.current_indicator);
             }
 
             Row::new([self.id.to_string(), flags, path.to_string()])
@@ -2469,7 +2469,7 @@ fn buffer_picker(cx: &mut Context) {
         is_modified: doc.is_modified(),
         is_current: doc.id() == current,
         modified_indicator: cx.editor.config().file_modification_indicator.clone(),
-        current_indicator: DEFAULT_CURRENT_BUFFER_INDICATOR.to_string(),
+        current_indicator: DEFAULT_CURRENT_BUFFER_INDICATOR,
     };
 
     let picker = FilePicker::new(

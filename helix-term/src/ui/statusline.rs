@@ -430,7 +430,7 @@ where
             if context.doc.is_modified() {
                 file_modification_indicator
             } else {
-                ""
+                &' '
             }
         )
     };
