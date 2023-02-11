@@ -471,6 +471,9 @@ pub enum StatusLineElement {
     /// The relative file path, including a dirty flag if it's unsaved
     FileName,
 
+    // The file modification indicator
+    FileModificationIndicator,
+
     /// The file encoding
     FileEncoding,
 
