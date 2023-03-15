@@ -53,12 +53,15 @@ signal to the Helix process on Unix operating systems, such as by using the comm
 | `spinner-frames` | List of strings comprising the frames to be used for the progress spinner[^1]. Set to `[]` to disable spinner display. | `["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]` |
 | `spinner-interval` | The minimum number of milliseconds to advance the progress spinner[^1] frame. Set to `0` to disable spinner display. | `80` |
 | `read-only-indicator` | String to display next to filename in statusbar when configured and if file is read-only. Set to `""` to disable. | `"[RO]"` |
+| `completion-replace` | Set to `true` to make completions always replace the entire word and not just the part before the cursor | `false` |
 | `auto-info` | Whether to display info boxes | `true` |
 | `true-color` | Set to `true` to override automatic detection of terminal truecolor support in the event of a false negative | `false` |
+| `undercurl` | Set to `true` to override automatic detection of terminal undercurl support in the event of a false negative | `false` |
 | `rulers` | List of column positions at which to display the rulers. Can be overridden by language specific `rulers` in `languages.toml` file | `[]` |
 | `bufferline` | Renders a line at the top of the editor displaying open buffers. Can be `always`, `never` or `multiple` (only shown if more than one buffer is in use) | `never` |
 | `color-modes` | Whether to color the mode indicator with different colors depending on the mode itself | `false` |
 | `file-modification-indicator` | The string to be displayed in the statusbar when the file has been modified. | `"[+]"` |
+| `text-width` | Maximum line length. Used for the `:reflow` command and soft-wrapping if `soft-wrap.wrap_at_text_width` is set | `80` |
 
 ### `[editor.statusline]` Section
 
@@ -114,6 +117,7 @@ The following statusline elements can be configured:
 | `position-percentage` | The cursor position as a percentage of the total number of lines |
 | `separator` | The string defined in `editor.statusline.separator` (defaults to `"│"`) |
 | `spacer` | Inserts a space between elements (multiple/contiguous spacers may be specified) |
+| `version-control` | The current branch name or detached commit hash of the opened workspace |
 
 ### `[editor.lsp]` Section
 
@@ -122,9 +126,12 @@ The following statusline elements can be configured:
 | `enable`              | Enables LSP integration. Setting to false will completely disable language servers regardless of language settings.| `true` |
 | `display-messages`    | Display LSP progress messages below statusline[^1]          | `false` |
 | `auto-signature-help` | Enable automatic popup of signature help (parameter hints)  | `true`  |
+| `display-inlay-hints` | Display inlay hints[^2]                                     | `false` |
 | `display-signature-help-docs` | Display docs under signature help popup             | `true`  |
 
 [^1]: By default, a progress spinner is shown in the statusline beside the file path.
+[^2]: You may also have to activate them in the LSP config for them to appear, not just in Helix.
+      Inlay hints in Helix are still being improved on and may be a little bit laggy/janky under some circumstances, please report any bugs you see so we can fix them!
 
 ### `[editor.cursor-shape]` Section
 
@@ -336,12 +343,13 @@ Currently unused
 
 Options for soft wrapping lines that exceed the view width:
 
-| Key                 | Description                                                  | Default |
-| ---                 | ---                                                          | ---     |
-| `enable`            | Whether soft wrapping is enabled                             | `false` |
-| `max-wrap`          | Maximum free space left at the end of the line               | `20`    |
-| `max-indent-retain` | Maximum indentation to carry over when soft wrapping a line  | `40`    |
-| `wrap-indicator`    | Text inserted before soft wrapped lines, highlighted with `ui.virtual.wrap` | `↪ `    |
+| Key                  | Description                                                  | Default |
+| ---                  | ---                                                          | ---     |
+| `enable`             | Whether soft wrapping is enabled.                            | `false` |
+| `max-wrap`           | Maximum free space left at the end of the line.              | `20`    |
+| `max-indent-retain`  | Maximum indentation to carry over when soft wrapping a line. | `40`    |
+| `wrap-indicator`     | Text inserted before soft wrapped lines, highlighted with `ui.virtual.wrap` | `↪ `    |
+| `wrap-at-text-width` | Soft wrap at `text-width` instead of using the full viewport size. | `false` |
 
 Example:
 
