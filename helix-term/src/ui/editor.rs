@@ -1047,10 +1047,15 @@ impl EditorView {
             ..
         } = *event;
 
-        let pos_and_view = |editor: &Editor, row, column| {
+        let pos_and_view = |editor: &Editor, row, column, ignore_virtual_text| {
             editor.tree.views().find_map(|(view, _focus)| {
-                view.pos_at_screen_coords(&editor.documents[&view.doc], row, column, true)
-                    .map(|pos| (pos, view.id))
+                view.pos_at_screen_coords(
+                    &editor.documents[&view.doc],
+                    row,
+                    column,
+                    ignore_virtual_text,
+                )
+                .map(|pos| (pos, view.id))
             })
         };
 
@@ -1065,7 +1070,7 @@ impl EditorView {
             MouseEventKind::Down(MouseButton::Left) => {
                 let editor = &mut cxt.editor;
 
-                if let Some((pos, view_id)) = pos_and_view(editor, row, column) {
+                if let Some((pos, view_id)) = pos_and_view(editor, row, column, true) {
                     let doc = doc_mut!(editor, &view!(editor, view_id).doc);
 
                     if modifiers == KeyModifiers::ALT {
@@ -1129,7 +1134,7 @@ impl EditorView {
                     _ => unreachable!(),
                 };
 
-                match pos_and_view(cxt.editor, row, column) {
+                match pos_and_view(cxt.editor, row, column, false) {
                     Some((_, view_id)) => cxt.editor.tree.focus = view_id,
                     None => return EventResult::Ignored(None),
                 }
@@ -1200,7 +1205,7 @@ impl EditorView {
                     return EventResult::Consumed(None);
                 }
 
-                if let Some((pos, view_id)) = pos_and_view(editor, row, column) {
+                if let Some((pos, view_id)) = pos_and_view(editor, row, column, true) {
                     let doc = doc_mut!(editor, &view!(editor, view_id).doc);
                     doc.set_selection(view_id, Selection::point(pos));
                     cxt.editor.focus(view_id);
