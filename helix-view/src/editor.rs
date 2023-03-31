@@ -10,6 +10,7 @@ use crate::{
     view::ViewPosition,
     Align, Document, DocumentId, View, ViewId,
 };
+use dap::StackFrame;
 use helix_vcs::DiffProviderRegistry;
 
 use futures_util::stream::select_all::SelectAll;
@@ -296,6 +297,8 @@ pub struct Config {
     /// File type icon/string map for overriding file type.
     pub file_type_indicators: HashMap<String, String>,
     pub soft_wrap: SoftWrap,
+    /// Workspace specific lsp ceiling dirs
+    pub workspace_lsp_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,6 +367,8 @@ pub struct LspConfig {
     pub display_signature_help_docs: bool,
     /// Display inlay hints
     pub display_inlay_hints: bool,
+    /// Whether to enable snippet support
+    pub snippets: bool,
 }
 
 impl Default for LspConfig {
@@ -374,6 +379,7 @@ impl Default for LspConfig {
             auto_signature_help: true,
             display_signature_help_docs: true,
             display_inlay_hints: false,
+            snippets: true,
         }
     }
 }
@@ -767,6 +773,7 @@ impl Default for Config {
             soft_wrap: SoftWrap::default(),
             text_width: 80,
             completion_replace: false,
+            workspace_lsp_roots: Vec::new(),
         }
     }
 }
@@ -1107,15 +1114,15 @@ impl Editor {
         }
 
         // if doc doesn't have a URL it's a scratch buffer, ignore it
-        let (lang, path) = {
-            let doc = self.document(doc_id)?;
-            (doc.language.clone(), doc.path().cloned())
-        };
+        let doc = self.document(doc_id)?;
+        let (lang, path) = (doc.language.clone(), doc.path().cloned());
+        let config = doc.config.load();
+        let root_dirs = &config.workspace_lsp_roots;
 
         // try to find a language server based on the language name
         let language_server = lang.as_ref().and_then(|language| {
             self.language_servers
-                .get(language, path.as_ref())
+                .get(language, path.as_ref(), root_dirs, config.lsp.snippets)
                 .map_err(|e| {
                     log::error!(
                         "Failed to initialize the LSP for `{}` {{ {} }}",
@@ -1672,6 +1679,12 @@ impl Editor {
             doc.set_selection(view.id, selection);
             doc.restore_cursor = false;
         }
+    }
+
+    pub fn current_stack_frame(&self) -> Option<&StackFrame> {
+        self.debugger
+            .as_ref()
+            .and_then(|debugger| debugger.current_stack_frame())
     }
 }
 

@@ -12,7 +12,7 @@ pub use typed::*;
 use helix_core::{
     char_idx_at_visual_offset, comment,
     doc_formatter::TextFormat,
-    encoding, find_first_non_whitespace_char, find_root, graphemes,
+    encoding, find_first_non_whitespace_char, find_workspace, graphemes,
     history::UndoKind,
     increment, indent,
     indent::IndentStyle,
@@ -54,8 +54,8 @@ use crate::{
     job::Callback,
     keymap::ReverseKeymap,
     ui::{
-        self, editor::InsertEvent, overlay::overlayed, FilePicker, Picker, Popup, Prompt,
-        PromptEvent,
+        self, editor::InsertEvent, lsp::SignatureHelp, overlay::overlayed, FilePicker, Picker,
+        Popup, Prompt, PromptEvent,
     },
 };
 
@@ -2421,9 +2421,7 @@ fn append_mode(cx: &mut Context) {
 }
 
 fn file_picker(cx: &mut Context) {
-    // We don't specify language markers, root will be the root of the current
-    // git repo or the current dir if we're not in a repo
-    let root = find_root(None, &[]);
+    let root = find_workspace().0;
     let picker = ui::file_picker(root, &cx.editor.config());
     cx.push_layer(Box::new(overlayed(picker)));
 }
@@ -4269,7 +4267,7 @@ pub fn completion(cx: &mut Context) {
             }
             let size = compositor.size();
             let ui = compositor.find::<ui::EditorView>().unwrap();
-            ui.set_completion(
+            let completion_area = ui.set_completion(
                 editor,
                 savepoint,
                 items,
@@ -4278,6 +4276,15 @@ pub fn completion(cx: &mut Context) {
                 trigger_offset,
                 size,
             );
+            let size = compositor.size();
+            let signature_help_area = compositor
+                .find_id::<Popup<SignatureHelp>>(SignatureHelp::ID)
+                .map(|signature_help| signature_help.area(size, editor));
+            // Delete the signature help popup if they intersect.
+            if matches!((completion_area, signature_help_area),(Some(a), Some(b)) if a.intersects(b))
+            {
+                compositor.remove(SignatureHelp::ID);
+            }
         },
     );
 }
